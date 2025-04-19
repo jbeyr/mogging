@@ -20,29 +20,29 @@ class Mogging : ModInitializer {
         const val MOD_ID = "mogging"
 
         // Create a registry key for our entity
-        private val HACKERMAN_ZOMBIE_KEY = RegistryKey.of(
+        private val HACKERMAN_KEY = RegistryKey.of(
             RegistryKeys.ENTITY_TYPE,
-            Identifier.of(MOD_ID, "hackerman_zombie")
+            Identifier.of(MOD_ID, "hackerman")
         )
 
-        val HACKERMAN_ZOMBIE: EntityType<HackermanZombieEntity> = Registry.register(
+        val HACKERMAN: EntityType<HackermanEntity> = Registry.register(
             Registries.ENTITY_TYPE,
-            HACKERMAN_ZOMBIE_KEY.value,
+            HACKERMAN_KEY.value,
             FabricEntityTypeBuilder.create(SpawnGroup.MONSTER) { entityType, world ->
-                HackermanZombieEntity(entityType, world)
-            }.dimensions(EntityDimensions.fixed(0.6f, 1.95f)).build(HACKERMAN_ZOMBIE_KEY)
+                HackermanEntity(entityType, world)
+            }.dimensions(EntityDimensions.fixed(0.6f, 1.95f)).build(HACKERMAN_KEY)
         )
     }
 
     override fun onInitialize() {
         // Register entity attributes
-        FabricDefaultAttributeRegistry.register(HACKERMAN_ZOMBIE, HackermanZombieEntity.createAttributes())
+        FabricDefaultAttributeRegistry.register(HACKERMAN, HackermanEntity.createAttributes())
 
         // Set up natural spawning
         BiomeModifications.addSpawn(
             BiomeSelectors.foundInOverworld(),
             SpawnGroup.MONSTER,
-            HACKERMAN_ZOMBIE,
+            HACKERMAN,
             30, // Weight
             1,  // Min in group
             3   // Max in group
@@ -50,7 +50,7 @@ class Mogging : ModInitializer {
 
         // Set spawn restrictions
         SpawnRestriction.register(
-            HACKERMAN_ZOMBIE,
+            HACKERMAN,
             SpawnLocationTypes.ON_GROUND,
             Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
             ZombieEntity::canSpawnInDark
