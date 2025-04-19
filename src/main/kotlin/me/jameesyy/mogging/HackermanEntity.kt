@@ -22,11 +22,14 @@ import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.random.Random
 import net.minecraft.world.LocalDifficulty
 import net.minecraft.world.World
+import java.util.*
 
 class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World) : HostileEntity(entityType, world) {
 
     // Animation properties
     private var prevHandSwingProgress = 0f
+
+    // Single attack cooldown system
     private var attackCooldown = 0
 
     // Tracking properties for movement
@@ -41,7 +44,8 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
         // Animation constants
         private const val ATTACK_COOLDOWN = 5
-        private const val SWING_DURATION = 6 // Standard vanilla swing duration
+        private const val SWING_DURATION = 6
+        private const val PATH_UPDATE_INTERVAL = 10
 
         fun createAttributes(): DefaultAttributeContainer.Builder {
             return createHostileAttributes()
@@ -61,7 +65,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
     override fun initGoals() {
         this.goalSelector.add(0, SwimGoal(this))
-        this.goalSelector.add(1, LongRangeAttackGoal(this, 1.2, false))
+        this.goalSelector.add(1, HackermanAttackGoal(this, 1.2))
         this.goalSelector.add(7, WanderAroundFarGoal(this, 1.0))
         this.goalSelector.add(7, LookAroundGoal(this))
         this.goalSelector.add(8, LookAtEntityGoal(this, PlayerEntity::class.java, 8.0f))
@@ -96,7 +100,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         return Hand.MAIN_HAND
     }
 
-    // Use LivingEntity's vanilla implementation
+    // Use LivingEntity's vanilla implementation for smooth animation
     override fun getHandSwingProgress(tickDelta: Float): Float {
         var progress = handSwingProgress
         if (handSwinging) {
@@ -146,81 +150,76 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         }
     }
 
-    // Override to control when the entity can attack
-    fun canAttack(): Boolean {
-        return attackCooldown <= 0
-    }
-
-    // Custom method to trigger an attack with cooldown
-    fun performAttack(target: LivingEntity) {
-        if (attackCooldown <= 1) {
-            // Set cooldown
+    // Simple attack method with cooldown
+    fun tryAttackWithCooldown(target: LivingEntity): Boolean {
+        // Only attack if cooldown is finished
+        if (attackCooldown <= 0) {
+            // Set the cooldown
             attackCooldown = ATTACK_COOLDOWN
 
             // Trigger the swing animation
             this.swingHand(Hand.MAIN_HAND)
 
             // Perform the attack
-            this.tryAttack(this.world as ServerWorld, target)
+            return this.tryAttack(this.world as ServerWorld, target)
         }
+        return false
     }
 
-    // Improved attack goal with extended reach
-    private class LongRangeAttackGoal(
+    // Custom attack goal for Hackerman
+    private class HackermanAttackGoal(
         private val hackerman: HackermanEntity,
-        private val moveSpeed: Double,
-        pauseWhenMobIdle: Boolean
-    ) : MeleeAttackGoal(hackerman, moveSpeed, pauseWhenMobIdle) {
+        private val moveSpeed: Double
+    ) : Goal() {
 
-        private var ticksUntilPathRecalculation = 0
-        private var attackTicks = 0
+        private var pathUpdateTimer = 0
 
-        override fun tick() {
-            super.tick()
+        init {
+            // Set the controls this goal uses
+            this.controls = EnumSet.of(Control.MOVE, Control.LOOK)
+        }
 
-            // Decrement attack timer
-            if (attackTicks > 0) {
-                attackTicks--
-            }
-
-            // Force more frequent path recalculation
-            if (--ticksUntilPathRecalculation <= 0) {
-                val target = this.hackerman.target ?: return
-
-                // Update path more frequently when in combat
-                this.hackerman.navigation.startMovingTo(target, moveSpeed)
-                ticksUntilPathRecalculation = 10 // Recalculate path every half second
-            }
-
-            // Try to attack more frequently when in range
-            val target = this.hackerman.target
-            if (target != null && canAttack(target) && hackerman.canAttack() && attackTicks <= 0) {
-                hackerman.performAttack(target)
-                attackTicks = 10 // Match the cooldown for consistent attacks
-            }
+        override fun canStart(): Boolean {
+            val target = hackerman.target
+            return target != null && target.isAlive && hackerman.canTarget(target)
         }
 
         override fun shouldContinue(): Boolean {
-            val target = this.hackerman.target ?: return false
-            if (!target.isAlive) {
-                return false
-            }
-
-            return this.hackerman.canTarget(target)
-        }
-
-        override fun canAttack(target: LivingEntity?): Boolean {
-            return target != null && this.hackerman.squaredDistanceTo(target) <= (ATTACK_REACH * ATTACK_REACH)
-        }
-
-        override fun attack(target: LivingEntity?) {
-            // This is handled in the tick method for more frequent attacks
+            val target = hackerman.target
+            return target != null && target.isAlive && hackerman.canTarget(target)
         }
 
         override fun start() {
-            super.start()
-            ticksUntilPathRecalculation = 0 // Force immediate path calculation
-            attackTicks = 0 // Reset attack timer
+            // Start pursuing the target
+            val target = hackerman.target ?: return
+            hackerman.navigation.startMovingTo(target, moveSpeed)
+            hackerman.setAttacking(true)
+            pathUpdateTimer = 0
+        }
+
+        override fun stop() {
+            hackerman.setAttacking(false)
+            hackerman.navigation.stop()
+        }
+
+        override fun tick() {
+            val target = hackerman.target ?: return
+
+            // Always look at target
+            hackerman.lookAtEntity(target, 30.0f, 30.0f)
+
+            // Update path to target periodically
+            if (--pathUpdateTimer <= 0) {
+                pathUpdateTimer = PATH_UPDATE_INTERVAL
+                hackerman.navigation.startMovingTo(target, moveSpeed)
+            }
+
+            // Check if we're in range to attack
+            val distanceSquared = hackerman.squaredDistanceTo(target)
+            if (distanceSquared <= ATTACK_REACH * ATTACK_REACH) {
+                // Try to attack - the method handles its own cooldown
+                hackerman.tryAttackWithCooldown(target)
+            }
         }
     }
 
@@ -243,7 +242,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
                         if (length > 0.0) {
                             target.addVelocity(
                                 dx / length * knockbackMultiplier,
-                                0.25,
+                                0.3,
                                 dz / length * knockbackMultiplier
                             )
                         }
