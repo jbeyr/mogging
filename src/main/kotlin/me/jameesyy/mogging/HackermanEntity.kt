@@ -59,6 +59,8 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     init {
         this.setPathfindingPenalty(PathNodeType.LAVA, -1.0f)
         this.setPathfindingPenalty(PathNodeType.WATER, -1.0f)
+        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
+
 
         if (skinIndex == -1) {
             // Use entity UUID for consistent skin assignment
@@ -95,6 +97,14 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     override fun getActiveHand(): Hand {
         return Hand.MAIN_HAND
     }
+
+//    override fun getEquippedStack(slot: EquipmentSlot): ItemStack {
+//        if (slot == EquipmentSlot.MAINHAND) {
+//            return ItemStack(Items.IRON_SWORD)
+//        }
+//        return super.getEquippedStack(slot)
+//    }
+
 
     // uses LivingEntity's vanilla implementation for smooth animation
     override fun getHandSwingProgress(tickDelta: Float): Float {
@@ -233,9 +243,9 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
                     target.y + target.height * 0.5,
                     target.z,
                     10, // Number of particles
-                    0.1, // Spread X
-                    0.1, // Spread Y
-                    0.1, // Spread Z
+                    target.boundingBox.averageSideLength / 2, // Spread X
+                    target.boundingBox.lengthY / 2, // Spread Y
+                    target.boundingBox.averageSideLength / 2, // Spread Z
                     0.2 // Speed
                 )
 
@@ -459,7 +469,9 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
                     lastPathZ = target.z
                 }
 
-                // If very close to target but not in attack range, move directly toward target
+                // If very close to target but not in attack range, move directly toward target.
+                // for some reason removing this makes them not wanna attack skeletons, only strafe them,
+                // so im keeping this in
                 if (distanceSquared < 4.0 && distanceSquared > ATTACK_REACH * ATTACK_REACH) {
                     // Direct movement logic (keep as is)
                     val dx = target.x - hackerman.x
