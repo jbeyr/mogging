@@ -21,12 +21,16 @@ object SkinManager {
 
     // Get a texture by its ID (with wrapping)
     fun getTextureById(id: Int): Identifier {
-        return TEXTURES[id.absoluteValue % TEXTURES.size]
-    }
+        // Handle invalid IDs gracefully
+        val safeId = if (id >= 0) id else 0
 
-    // Get the number of available textures
-    fun getTextureCount(): Int {
-        return TEXTURES.size
+        // Make sure we have textures
+        if (TEXTURES.isEmpty()) {
+            return Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png")
+        }
+
+        // Get the texture with proper wrapping
+        return TEXTURES[safeId.absoluteValue % TEXTURES.size]
     }
 
     // Get the default texture

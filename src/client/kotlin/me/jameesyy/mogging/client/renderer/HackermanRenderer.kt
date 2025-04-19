@@ -1,4 +1,3 @@
-// File: me.jameesyy.mogging.client.renderer.HackermanRenderer.kt
 package me.jameesyy.mogging.client.renderer
 
 import me.jameesyy.mogging.HackermanEntity
@@ -29,36 +28,6 @@ class HackermanRenderer(context: EntityRendererFactory.Context) :
 
     // Thread-local storage for current entity being rendered
     private val currentEntity = ThreadLocal<HackermanEntity>()
-
-    init {
-        // Add held item renderer
-        this.addFeature(HeldItemFeatureRenderer(this))
-    }
-
-    override fun render(
-        entity: PlayerEntityRenderState?,
-        matrices: MatrixStack?,
-        vertexConsumers: VertexConsumerProvider?,
-        light: Int
-    ) {
-        try {
-            if (entity == null) return
-
-            // Get the associated Hackerman entity
-            val hackermanEntity = currentEntity.get() ?: return
-
-            // Get texture for this entity
-            val texture = SkinManager.getTextureById(hackermanEntity.getSkinIndex())
-
-            // Detect if it's a slim skin and set the appropriate model
-            model = if (SkinManager.isSlimSkin(texture)) slimModel else classicModel
-
-            super.render(entity, matrices, vertexConsumers, light)
-        } finally {
-            // Clear thread-local storage when done
-            currentEntity.remove()
-        }
-    }
 
     companion object {
         // Scan for skins at initialization time (client-side only)
@@ -99,21 +68,47 @@ class HackermanRenderer(context: EntityRendererFactory.Context) :
         }
     }
 
+    init {
+        // Add held item renderer
+        this.addFeature(HeldItemFeatureRenderer(this))
+    }
+
+    override fun render(
+        entity: PlayerEntityRenderState?,
+        matrices: MatrixStack?,
+        vertexConsumers: VertexConsumerProvider?,
+        light: Int
+    ) {
+        try {
+            if (entity == null) return
+
+            // Get the associated Hackerman entity
+            val hackermanEntity = currentEntity.get() ?: return
+
+            // Get texture for this entity
+            val texture = SkinManager.getTextureById(hackermanEntity.getSkinIndex())
+
+            // Detect if it's a slim skin and set the appropriate model
+            model = if (SkinManager.isSlimSkin(texture)) slimModel else classicModel
+
+            super.render(entity, matrices, vertexConsumers, light)
+        } finally {
+            // Clear thread-local storage when done
+            currentEntity.remove()
+        }
+    }
+
     override fun getTexture(state: PlayerEntityRenderState?): Identifier {
         // Get the current entity from thread-local storage
         val entity = currentEntity.get()
 
         if (entity != null) {
-            val index = entity.getSkinIndex()
-            return if (TEXTURES.isNotEmpty()) {
-                TEXTURES[index % TEXTURES.size]
-            } else {
-                Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png")
-            }
+            // Use SkinManager to get the texture
+            return SkinManager.getTextureById(entity.getSkinIndex())
         }
 
         // Fallback
-        return Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png")
+        return SkinManager.getDefaultTexture()
     }
 
 
