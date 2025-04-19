@@ -14,6 +14,7 @@ import net.minecraft.entity.mob.MobEntity
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
+import net.minecraft.nbt.NbtCompound
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.sound.SoundEvent
 import net.minecraft.sound.SoundEvents
@@ -23,23 +24,18 @@ import net.minecraft.util.math.random.Random
 import net.minecraft.world.LocalDifficulty
 import net.minecraft.world.World
 import java.util.*
+import kotlin.math.absoluteValue
 
 class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World) : HostileEntity(entityType, world) {
 
-    // Animation properties
     private var prevHandSwingProgress = 0f
-
-    // Single attack cooldown system
     private var attackCooldown = 0
-
-    // Tracking properties for movement
     private var lastTargetX = 0.0
     private var lastTargetY = 0.0
     private var lastTargetZ = 0.0
     private var stuckTicks = 0
 
     companion object {
-        // Custom reach distance for Hackerman
         const val ATTACK_REACH = 5.0f
 
         // Animation constants
@@ -75,98 +71,81 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         this.targetSelector.add(3, ActiveTargetGoal(this, MobEntity::class.java, true))
     }
 
+    // FIXME for some reason this entity doesnt show equipment..
     override fun initEquipment(random: Random?, localDifficulty: LocalDifficulty?) {
         super.initEquipment(random, localDifficulty)
-
-        // Give it a visible weapon
         this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
-
-        // Set drop chances
         this.setEquipmentDropChance(EquipmentSlot.MAINHAND, 0.0f) // Don't drop the weapon
     }
 
-    // Ensure the entity is holding its weapon
-    override fun getMainHandStack(): ItemStack {
-        return this.getEquippedStack(EquipmentSlot.MAINHAND)
-    }
-
-    // Override to ensure we're never using an item
+    // TODO consider if needed
     override fun isUsingItem(): Boolean {
         return false
     }
 
-    // Set the active hand to MAIN_HAND
+    // TODO consider if needed
     override fun getActiveHand(): Hand {
         return Hand.MAIN_HAND
     }
 
-    // Use LivingEntity's vanilla implementation for smooth animation
+    // uses LivingEntity's vanilla implementation for smooth animation
     override fun getHandSwingProgress(tickDelta: Float): Float {
         var progress = handSwingProgress
         if (handSwinging) {
-            // If currently swinging, progress is based on current ticks
-            progress = (handSwingTicks.toFloat() + tickDelta) / SWING_DURATION
+            progress = (handSwingTicks.toFloat() + tickDelta) / SWING_DURATION // progress is based on current ticks
         }
         return MathHelper.clamp(progress, 0.0f, 1.0f)
     }
 
     override fun tick() {
-        // Store previous animation state before tick
         prevHandSwingProgress = handSwingProgress
 
         super.tick()
 
-        // Decrement attack cooldown
         if (attackCooldown > 0) {
             attackCooldown--
         }
 
-        // Check for stuck behavior with target
+        // stuck check
         val target = this.target
         if (target != null) {
-            // If we haven't moved in a while and have a target
+            // if we haven't moved in a while and have a target
             if (this.lastTargetX == target.x &&
                 this.lastTargetY == target.y &&
                 this.lastTargetZ == target.z) {
                 stuckTicks++
 
-                // If stuck for too long, force a navigation update
+                // if stuck for too long, force a navigation update
                 if (stuckTicks > 40) { // 2 seconds
-                    // Force navigation recalculation
                     this.navigation.stop()
                     this.navigation.startMovingTo(target, 1.2)
                     stuckTicks = 0
                 }
             } else {
-                // Update last target position
                 this.lastTargetX = target.x
                 this.lastTargetY = target.y
                 this.lastTargetZ = target.z
                 stuckTicks = 0
             }
 
-            // Always look at target even if pathfinding is failing
+            // always look at target even if pathfinding is failing
             this.lookAtEntity(target, 30.0f, 30.0f)
         }
     }
 
-    // Simple attack method with cooldown
+    // simple attack method with cooldown
     fun tryAttackWithCooldown(target: LivingEntity): Boolean {
-        // Only attack if cooldown is finished
         if (attackCooldown <= 0) {
-            // Set the cooldown
             attackCooldown = ATTACK_COOLDOWN
-
-            // Trigger the swing animation
             this.swingHand(Hand.MAIN_HAND)
-
-            // Perform the attack
             return this.tryAttack(this.world as ServerWorld, target)
         }
         return false
     }
 
-    // Custom attack goal for Hackerman
+    /**
+     * Custom attack goal for `HackermanEntity`.
+     */
     private class HackermanAttackGoal(
         private val hackerman: HackermanEntity,
         private val moveSpeed: Double
@@ -190,7 +169,6 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         }
 
         override fun start() {
-            // Start pursuing the target
             val target = hackerman.target ?: return
             hackerman.navigation.startMovingTo(target, moveSpeed)
             hackerman.setAttacking(true)
@@ -204,20 +182,17 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
         override fun tick() {
             val target = hackerman.target ?: return
+            hackerman.lookAtEntity(target, 30.0f, 30.0f) // always look at target
 
-            // Always look at target
-            hackerman.lookAtEntity(target, 30.0f, 30.0f)
-
-            // Update path to target periodically
+            // update path to target periodically
             if (--pathUpdateTimer <= 0) {
                 pathUpdateTimer = PATH_UPDATE_INTERVAL
                 hackerman.navigation.startMovingTo(target, moveSpeed)
             }
 
-            // Check if we're in range to attack
             val distanceSquared = hackerman.squaredDistanceTo(target)
             if (distanceSquared <= ATTACK_REACH * ATTACK_REACH) {
-                // Try to attack - the method handles its own cooldown
+                // try to attack - the method handles its own cooldown
                 hackerman.tryAttackWithCooldown(target)
             }
         }
@@ -242,7 +217,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
                         if (length > 0.0) {
                             target.addVelocity(
                                 dx / length * knockbackMultiplier,
-                                0.3,
+                                0.5,
                                 dz / length * knockbackMultiplier
                             )
                         }
@@ -256,7 +231,6 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         return false
     }
 
-    // Sounds
     override fun getAmbientSound(): SoundEvent {
         return SoundEvents.ENTITY_PLAYER_BREATH
     }
@@ -267,5 +241,35 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
     override fun getDeathSound(): SoundEvent {
         return SoundEvents.ENTITY_PLAYER_DEATH
+    }
+
+
+
+    private var skinIndex: Int = -1
+
+    init {
+        // Only set once when entity is first created
+        if (skinIndex == -1) {
+            // Random but deterministic skin assignment
+            skinIndex = (uuid.leastSignificantBits % 100).toInt().absoluteValue
+        }
+    }
+
+    // Save/load for persistence
+    override fun writeCustomDataToNbt(nbt: NbtCompound) {
+        super.writeCustomDataToNbt(nbt)
+        nbt.putInt("SkinIndex", skinIndex)
+    }
+
+    override fun readCustomDataFromNbt(nbt: NbtCompound) {
+        super.readCustomDataFromNbt(nbt)
+        if (nbt.contains("SkinIndex")) {
+            skinIndex = nbt.getInt("SkinIndex").orElse(0)
+        }
+    }
+
+    // Getter for the renderer to use
+    fun getSkinIndex(): Int {
+        return skinIndex
     }
 }
