@@ -26,7 +26,7 @@ object SkinManager {
 
         // Make sure we have textures
         if (TEXTURES.isEmpty()) {
-            return Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png")
+            return Identifier.of(Mogging.MOD_ID, "textures/entity/player_skins/alex.png")
         }
 
         // Get the texture with proper wrapping
@@ -35,7 +35,7 @@ object SkinManager {
 
     // Get the default texture
     fun getDefaultTexture(): Identifier {
-        return TEXTURES.firstOrNull() ?: Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png")
+        return TEXTURES.firstOrNull() ?: Identifier.of(Mogging.MOD_ID, "textures/entity/player_skins/alex.png")
     }
 
     // Detect if a skin uses the slim model by checking pixel transparency
@@ -108,7 +108,7 @@ object SkinManager {
 
         // If no skins were found, add at least one default skin
         if (skins.isEmpty()) {
-            skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png"))
+            skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/player_skins/alex.png"))
         }
 
         return skins

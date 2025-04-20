@@ -39,7 +39,7 @@ class HackermanRenderer(context: EntityRendererFactory.Context) :
                 val resourceManager = MinecraftClient.getInstance().resourceManager
 
                 // Find all skin textures
-                val startingPath = "textures/entity"
+                val startingPath = "textures/entity/player_skins"
                 val pathPredicate = { id: Identifier ->
                     id.namespace == Mogging.MOD_ID &&
                             id.path.startsWith(startingPath) &&
@@ -57,11 +57,11 @@ class HackermanRenderer(context: EntityRendererFactory.Context) :
             } catch (e: Exception) {
                 // Fallback
                 println("Error scanning for skin textures: ${e.message}")
-                skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png"))
+                skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/player_skins/alex.png"))
             }
 
             if (skins.isEmpty()) {
-                skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/alex.png"))
+                skins.add(Identifier.of(Mogging.MOD_ID, "textures/entity/player_skins/alex.png"))
             }
 
             skins
