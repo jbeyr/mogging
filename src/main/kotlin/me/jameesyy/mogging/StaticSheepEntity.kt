@@ -4,7 +4,7 @@ import net.minecraft.entity.EntityType
 import net.minecraft.entity.LivingEntity
 import net.minecraft.entity.ai.TargetPredicate
 import net.minecraft.entity.ai.goal.ActiveTargetGoal
-import net.minecraft.entity.ai.goal.EscapeDangerGoal
+import net.minecraft.entity.ai.goal.Goal
 import net.minecraft.entity.ai.goal.LookAtEntityGoal
 import net.minecraft.entity.ai.goal.RevengeGoal
 import net.minecraft.entity.attribute.DefaultAttributeContainer
@@ -13,6 +13,7 @@ import net.minecraft.entity.damage.DamageSource
 import net.minecraft.entity.data.DataTracker
 import net.minecraft.entity.data.TrackedData
 import net.minecraft.entity.data.TrackedDataHandlerRegistry
+import net.minecraft.entity.passive.CowEntity
 import net.minecraft.entity.passive.SheepEntity
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.particle.ParticleTypes
@@ -29,6 +30,7 @@ import net.minecraft.world.RaycastContext
 import net.minecraft.world.World
 import kotlin.math.atan2
 import kotlin.math.sqrt
+import java.util.EnumSet
 
 class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) : SheepEntity(entityType, world) {
 
@@ -38,6 +40,8 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     private var targetEntity: LivingEntity? = null
     private var shouldFlee = false
     private var fleeTimer = 0
+    private var hasLineOfSight = false
+    private var laserHoldTime = 0
 
     companion object {
         private val CHARGING_STATE: TrackedData<Boolean> = DataTracker.registerData(
@@ -46,10 +50,13 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
         )
 
         private const val DETECTION_RANGE = 16.0
+        private const val MAINTAIN_DISTANCE_RANGE = 20.0
+        private const val OPTIMAL_DISTANCE = 12.0
         private const val LASER_DAMAGE = 8.0f
         private const val SPLASH_DAMAGE = 4.0f
         private const val SPLASH_RADIUS = 3.0
         private const val CHARGE_DURATION = 40 // 2 seconds at 20 ticks per second
+        private const val MAX_LASER_HOLD_TIME = 60 // 3 seconds at 20 ticks per second
         private const val ATTACK_COOLDOWN = 100 // 5 seconds cooldown
         private const val FLEE_DURATION = 60 // 3 seconds of fleeing
 
@@ -70,30 +77,92 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     override fun initGoals() {
         super.initGoals()
 
-        // Add a goal to flee from the target after attacking
-        goalSelector.add(1, FleeFromTargetGoal())
+        // Maintain optimal distance from target
+        goalSelector.add(1, MaintainDistanceGoal())
 
-        // Add revenge goal to target entities that hit it (but only non-creative players)
-        targetSelector.add(1, SurvivalPlayerRevengeGoal(this))
-
-        // Look at players
+        // Look at players and cows
         goalSelector.add(2, LookAtEntityGoal(this, PlayerEntity::class.java, DETECTION_RANGE.toFloat()))
+        goalSelector.add(2, LookAtEntityGoal(this, CowEntity::class.java, DETECTION_RANGE.toFloat()))
 
-        // Target only non-creative players
+        // Target only non-creative players (higher priority)
+        targetSelector.add(1, SurvivalPlayerRevengeGoal(this))
         targetSelector.add(2, SurvivalPlayerTargetGoal(this, PlayerEntity::class.java, true))
+
+        // Target cows (lower priority)
+        targetSelector.add(3, ActiveTargetGoal(this, CowEntity::class.java, true))
     }
 
-    // Custom goal to flee from the target
-    private inner class FleeFromTargetGoal : EscapeDangerGoal(this, 1.25) {
+    // Custom goal to maintain optimal distance from any target
+    private inner class MaintainDistanceGoal : Goal() {
+        private var moveAwayPosition: Vec3d? = null
+
+        init {
+            setControls(EnumSet.of(Goal.Control.MOVE))
+        }
+
         override fun canStart(): Boolean {
-            return shouldFlee && targetEntity != null
+            return targetEntity != null &&
+                    targetEntity!!.isAlive &&
+                    !isCharging &&
+                    !shouldFlee
+        }
+
+        override fun shouldContinue(): Boolean {
+            return targetEntity != null &&
+                    targetEntity!!.isAlive &&
+                    !isCharging &&
+                    !shouldFlee
+        }
+
+        override fun tick() {
+            targetEntity?.let { target ->
+                val distanceToTarget = sqrt(target.squaredDistanceTo(this@StaticSheepEntity))
+
+                if (distanceToTarget < OPTIMAL_DISTANCE - 2.0) {
+                    // Too close, move away
+                    val directionAway = pos.subtract(target.pos).normalize()
+                    moveAwayPosition = pos.add(directionAway.multiply(5.0))
+                    navigation.startMovingTo(moveAwayPosition!!.x, moveAwayPosition!!.y, moveAwayPosition!!.z, 1.0)
+                } else if (distanceToTarget > OPTIMAL_DISTANCE + 2.0) {
+                    // Too far, move closer but maintain line of sight
+                    val directionTowards = target.pos.subtract(pos).normalize()
+                    moveAwayPosition = pos.add(directionTowards.multiply(2.0))
+
+                    // Check if moving closer would maintain line of sight
+                    val potentialEyePos = moveAwayPosition!!.add(0.0, standingEyeHeight.toDouble(), 0.0)
+                    val raycast = performRaycast(potentialEyePos, target.eyePos)
+
+                    if (raycast.type != HitResult.Type.BLOCK) {
+                        navigation.startMovingTo(moveAwayPosition!!.x, moveAwayPosition!!.y, moveAwayPosition!!.z, 1.0)
+                    } else {
+                        // Find a position that would give us line of sight
+                        moveTowardsTargetForLineOfSight()
+                    }
+                } else {
+                    // At good distance, just check for line of sight
+                    val raycast = performRaycast(eyePos, target.eyePos)
+                    if (raycast.type == HitResult.Type.BLOCK) {
+                        moveTowardsTargetForLineOfSight()
+                    } else {
+                        // We have line of sight at optimal distance, stop moving
+                        navigation.stop()
+
+                        // If we have a clear shot and cooldown is ready, start charging
+                        if (attackCooldown <= 0 && !isCharging) {
+                            startCharging()
+                        }
+                    }
+                }
+
+                // Always face the target
+                faceTarget(target)
+            }
         }
     }
 
     // Custom revenge goal that only targets non-creative players
     private class SurvivalPlayerRevengeGoal(entity: StaticSheepEntity) : RevengeGoal(entity) {
         override fun canTrack(target: LivingEntity?, targetPredicate: TargetPredicate?): Boolean {
-
             if (target is PlayerEntity) {
                 // Only target players in survival/adventure
                 return (target.gameMode == GameMode.SURVIVAL || target.gameMode == GameMode.ADVENTURE) && super.canTrack(target, targetPredicate)
@@ -110,7 +179,7 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     ) : ActiveTargetGoal<T>(entity, targetClass, checkVisibility) {
         override fun canTrack(target: LivingEntity?, targetPredicate: TargetPredicate?): Boolean {
             if (target is PlayerEntity) {
-                return target.gameMode == GameMode.SURVIVAL || target.gameMode == GameMode.ADVENTURE && super.canTrack(target, targetPredicate)
+                return (target.gameMode == GameMode.SURVIVAL || target.gameMode == GameMode.ADVENTURE) && super.canTrack(target, targetPredicate)
             }
             return super.canTrack(target, targetPredicate)
         }
@@ -133,20 +202,29 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
                 }
             }
 
-            // Find closest player if we don't have a target
+            // Update target entity from AI target
             if (targetEntity == null || !targetEntity!!.isAlive || !isValidTarget(targetEntity!!)) {
-                // Try to get the revenge target first
-                val attackTarget = this.target
-                if (attackTarget != null && attackTarget.isAlive && isValidTarget(attackTarget)) {
-                    targetEntity = attackTarget
+                // Try to get the current target from AI
+                val aiTarget = this.target
+                if (aiTarget != null && aiTarget.isAlive && isValidTarget(aiTarget)) {
+                    targetEntity = aiTarget
                 } else {
-                    findNearestPlayer()
+                    // If no AI target, look for nearest valid target
+                    findNearestTarget()
                 }
             }
 
-            // If we have a target and aren't charging, start charging
+            // If we have a target and aren't charging, check if we should start charging
             if (targetEntity != null && !isCharging && attackCooldown <= 0 && !shouldFlee) {
-                startCharging()
+                // Check if we have line of sight to the target
+                val raycastResult = performRaycast(this.eyePos, targetEntity!!.eyePos)
+                if (raycastResult.type != HitResult.Type.BLOCK) {
+                    // Only start charging if we have line of sight
+                    val distance = targetEntity!!.squaredDistanceTo(this)
+                    if (distance <= OPTIMAL_DISTANCE * OPTIMAL_DISTANCE * 1.5) { // Allow some flexibility in distance
+                        startCharging()
+                    }
+                }
             }
 
             // Handle charging state
@@ -156,12 +234,74 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
         }
     }
 
+    private fun moveTowardsTargetForLineOfSight() {
+        targetEntity?.let { target ->
+            // Calculate a position that might give us line of sight
+            val dirToTarget = target.pos.subtract(pos).normalize()
+
+            // Try a few different positions to find one with line of sight
+            for (angle in arrayOf(0.0, 45.0, -45.0, 90.0, -90.0)) {
+                val radians = angle * Math.PI / 180.0
+                val rotatedDir = Vec3d(
+                    dirToTarget.x * Math.cos(radians) - dirToTarget.z * Math.sin(radians),
+                    dirToTarget.y,
+                    dirToTarget.x * Math.sin(radians) + dirToTarget.z * Math.cos(radians)
+                ).normalize()
+
+                val potentialPos = pos.add(rotatedDir.multiply(3.0))
+
+                // Check if moving to this position would improve line of sight
+                val raycastFromPotential = performRaycast(
+                    potentialPos.add(0.0, standingEyeHeight.toDouble(), 0.0),
+                    target.eyePos
+                )
+
+                if (raycastFromPotential.type != HitResult.Type.BLOCK) {
+                    // Move towards this position
+                    navigation.startMovingTo(
+                        potentialPos.x,
+                        potentialPos.y,
+                        potentialPos.z,
+                        1.0
+                    )
+                    return
+                }
+            }
+
+            // If no good position found, just move a bit closer
+            val potentialPos = pos.add(dirToTarget.multiply(2.0))
+            navigation.startMovingTo(
+                potentialPos.x,
+                potentialPos.y,
+                potentialPos.z,
+                1.0
+            )
+        }
+    }
+
+    private fun faceTarget(target: LivingEntity) {
+        // Calculate yaw and pitch to face target
+        val targetPos = target.eyePos
+        val dx = targetPos.x - this.x
+        val dz = targetPos.z - this.z
+        val yaw = (atan2(dz, dx) * 180 / Math.PI).toFloat() - 90f
+
+        val dy = targetPos.y - (this.y + this.standingEyeHeight)
+        val horizontalDistance = sqrt(dx * dx + dz * dz).toFloat()
+        val pitch = -(atan2(dy, horizontalDistance.toDouble()) * 180 / Math.PI).toFloat()
+
+        // Set yaw and pitch gradually to make it look more natural
+        this.headYaw = yaw
+        this.bodyYaw = yaw
+    }
+
     private fun isValidTarget(entity: LivingEntity): Boolean {
         if (entity is PlayerEntity) {
             val gm = entity.gameMode
             return gm == GameMode.SURVIVAL || gm == GameMode.ADVENTURE
         }
-        return true
+        // Cows and other entities are always valid targets
+        return entity is CowEntity || entity.type == EntityType.COW
     }
 
     // Override damage to set the attacker as a target
@@ -173,6 +313,7 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
             val attacker = source.attacker as LivingEntity
             if (isValidTarget(attacker)) {
                 targetEntity = attacker
+                this.target = attacker
 
                 // Start charging immediately if not already charging
                 if (!isCharging && attackCooldown <= 0 && !shouldFlee) {
@@ -184,18 +325,40 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
         return result
     }
 
-    private fun findNearestPlayer() {
+    private fun findNearestTarget() {
+        // First check for players (higher priority)
         val nearbyPlayers = world.getEntitiesByClass(
             PlayerEntity::class.java,
             Box.from(pos).expand(DETECTION_RANGE)
         ) { it.isAlive && !it.isSpectator && isValidTarget(it) }
 
-        targetEntity = nearbyPlayers.minByOrNull { it.squaredDistanceTo(this) }
+        val nearestPlayer = nearbyPlayers.minByOrNull { it.squaredDistanceTo(this) }
+
+        if (nearestPlayer != null) {
+            targetEntity = nearestPlayer
+            this.target = nearestPlayer
+            return
+        }
+
+        // If no players, check for cows
+        val nearbyCows = world.getEntitiesByClass(
+            CowEntity::class.java,
+            Box.from(pos).expand(DETECTION_RANGE)
+        ) { it.isAlive }
+
+        val nearestCow = nearbyCows.minByOrNull { it.squaredDistanceTo(this) }
+
+        if (nearestCow != null) {
+            targetEntity = nearestCow
+            this.target = nearestCow
+        }
     }
 
     private fun startCharging() {
         isCharging = true
         chargeTime = 0
+        hasLineOfSight = false
+        laserHoldTime = 0
         setColor(DyeColor.BLACK)  // Use public method
         dataTracker.set(CHARGING_STATE, true)
 
@@ -213,32 +376,13 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     private fun handleCharging() {
         chargeTime++
 
-        // Flash wool color between black and yellow while charging
+        // Color flashing
         if (chargeTime % 2 == 0) {
             if (color == DyeColor.BLACK) {
                 setColor(DyeColor.YELLOW)
             } else {
                 setColor(DyeColor.BLACK)
             }
-        }
-
-        // Face the target when about to fire
-        if (chargeTime >= CHARGE_DURATION - 10 && targetEntity != null) {
-            // Calculate yaw and pitch to face target
-            val targetPos = targetEntity!!.eyePos
-            val dx = targetPos.x - this.x
-            val dz = targetPos.z - this.z
-            val yaw = (atan2(dz, dx) * 180 / Math.PI).toFloat() - 90f
-
-            val dy = targetPos.y - (this.y + this.standingEyeHeight)
-            val horizontalDistance = sqrt(dx * dx + dz * dz).toFloat()
-            val pitch = -(atan2(dy, horizontalDistance.toDouble()) * 180 / Math.PI).toFloat()
-
-            // Set yaw and pitch directly
-            this.yaw = yaw
-            this.pitch = pitch
-            this.headYaw = yaw
-            this.bodyYaw = yaw
         }
 
         // Spawn particles while charging
@@ -257,14 +401,101 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
             }
         }
 
-        // Fire laser when charge is complete
+        // Once fully charged
         if (chargeTime >= CHARGE_DURATION) {
-            fireLaser()
-            resetChargingState()
+            targetEntity?.let { target ->
+                // Check for line of sight
+                val raycastResult = performRaycast(this.eyePos, target.eyePos)
+                hasLineOfSight = raycastResult.type != HitResult.Type.BLOCK
 
-            // Start fleeing after firing
-            shouldFlee = true
-            fleeTimer = FLEE_DURATION
+                // If we have line of sight, fire the laser
+                if (hasLineOfSight) {
+                    fireLaser()
+                    resetChargingState()
+
+                    // Start fleeing after firing
+                    shouldFlee = true
+                    fleeTimer = FLEE_DURATION
+                } else {
+                    // No line of sight, increment hold time
+                    laserHoldTime++
+
+                    // Face the target
+                    faceTarget(target)
+
+                    // Try to move to get line of sight
+                    moveToGetLineOfSight(target)
+
+                    // If we've held the charge too long, reset
+                    if (laserHoldTime >= MAX_LASER_HOLD_TIME) {
+                        // Failed to get line of sight within time limit
+                        world.playSound(
+                            null,
+                            pos.x, pos.y, pos.z,
+                            SoundEvents.BLOCK_BEACON_DEACTIVATE,
+                            SoundCategory.HOSTILE,
+                            1.0f,
+                            1.0f
+                        )
+                        resetChargingState()
+                        attackCooldown = ATTACK_COOLDOWN / 2 // Half cooldown for failed attempts
+                    }
+                }
+            } ?: resetChargingState() // Reset if no target
+        }
+    }
+
+    private fun moveToGetLineOfSight(target: LivingEntity) {
+        // Move more aggressively towards target when charged
+        val dirToTarget = target.pos.subtract(pos).normalize()
+        val distanceToTarget = pos.distanceTo(target.pos)
+
+        // If we're far away, move closer
+        if (distanceToTarget > 5.0) {
+            val movePos = pos.add(dirToTarget.multiply(2.0))
+            navigation.startMovingTo(movePos.x, movePos.y, movePos.z, 1.2) // Move faster
+        } else {
+            // If we're close, try to find a position with line of sight
+            // Try different angles and elevations
+            val possiblePositions = mutableListOf<Vec3d>()
+
+            // Try positions at different angles
+            for (angle in arrayOf(0.0, 30.0, -30.0, 60.0, -60.0, 90.0, -90.0)) {
+                val radians = angle * Math.PI / 180.0
+                val rotatedDir = Vec3d(
+                    dirToTarget.x * Math.cos(radians) - dirToTarget.z * Math.sin(radians),
+                    dirToTarget.y,
+                    dirToTarget.x * Math.sin(radians) + dirToTarget.z * Math.cos(radians)
+                ).normalize()
+
+                // Try different distances
+                for (dist in 2..4) {
+                    val potentialPos = pos.add(rotatedDir.multiply(dist.toDouble()))
+
+                    // Check if this position gives line of sight
+                    val eyeHeight = standingEyeHeight.toDouble()
+                    val raycast = performRaycast(
+                        potentialPos.add(0.0, eyeHeight, 0.0),
+                        target.eyePos
+                    )
+
+                    if (raycast.type != HitResult.Type.BLOCK) {
+                        possiblePositions.add(potentialPos)
+                    }
+                }
+            }
+
+            // If we found positions with line of sight, move to the closest one
+            if (possiblePositions.isNotEmpty()) {
+                val closestPos = possiblePositions.minByOrNull { it.distanceTo(pos) }
+                closestPos?.let {
+                    navigation.startMovingTo(it.x, it.y, it.z, 1.2)
+                }
+            } else {
+                // If no good position found, just move towards the target
+                val movePos = pos.add(dirToTarget.multiply(1.5))
+                navigation.startMovingTo(movePos.x, movePos.y, movePos.z, 1.2)
+            }
         }
     }
 
@@ -398,6 +629,8 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     private fun resetChargingState() {
         isCharging = false
         chargeTime = 0
+        laserHoldTime = 0
+        hasLineOfSight = false
         dataTracker.set(CHARGING_STATE, false)
         setColor(DyeColor.WHITE)  // Use public method
     }

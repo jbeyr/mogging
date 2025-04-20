@@ -1,7 +1,6 @@
 package me.jameesyy.mogging.client
 
 import me.jameesyy.mogging.MoggingEntities
-import me.jameesyy.mogging.StaticSheepEntity
 import me.jameesyy.mogging.client.renderer.HackermanRenderer
 import me.jameesyy.mogging.client.renderer.PiranhaRenderer
 import me.jameesyy.mogging.client.renderer.StaticSheepRenderer
