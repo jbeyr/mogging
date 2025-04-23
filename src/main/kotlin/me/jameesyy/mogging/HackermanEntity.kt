@@ -15,13 +15,13 @@ import net.minecraft.entity.mob.MobEntity
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
-import net.minecraft.nbt.NbtCompound
 import net.minecraft.particle.ParticleTypes
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.sound.SoundEvent
 import net.minecraft.sound.SoundEvents
 import net.minecraft.util.Hand
 import net.minecraft.util.math.MathHelper
+import net.minecraft.util.math.Vec3d
 import net.minecraft.util.math.random.Random
 import net.minecraft.world.LocalDifficulty
 import net.minecraft.world.ServerWorldAccess
@@ -74,7 +74,6 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         entityData: EntityData?
     ): EntityData? {
         assignSkinIndexIfNeeded()
-        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
         return super.initialize(world, difficulty, spawnReason, entityData)
     }
 
@@ -98,19 +97,17 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     // FIXME for some reason this entity doesnt show equipment..
     override fun initEquipment(random: Random?, localDifficulty: LocalDifficulty?) {
         super.initEquipment(random, localDifficulty)
-        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
-        this.setEquipmentDropChance(EquipmentSlot.MAINHAND, 0.0f) // Don't drop the weapon
     }
+//
+//    // TODO consider if needed
+//    override fun isUsingItem(): Boolean {
+//        return false
+//    }
 
     // TODO consider if needed
-    override fun isUsingItem(): Boolean {
-        return false
-    }
-
-    // TODO consider if needed
-    override fun getActiveHand(): Hand {
-        return Hand.MAIN_HAND
-    }
+//    override fun getActiveHand(): Hand {
+//        return Hand.MAIN_HAND
+//    }
 
 // this seems to work, but sword doesnt render
 //    override fun getEquippedStack(slot: EquipmentSlot): ItemStack {
@@ -131,17 +128,18 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     }
 
     private var jumpCooldown = 0
-    private val JUMP_COOLDOWN_MAX = 1 // lol
-    private val JUMP_CHANCE = 0.4f
+    private val jumpCooldownMax = 1 // lol
+    private val jumpChance = 0.4f
+    private var nextJumpBoost = 0.0f // 0 = no extra boost; this is for micro-spacing
 
     private var strafingTime = 0
     private var strafingClockwise = false
     private var strafeSpeed = 0.0
-    private val STRAFE_DURATION_MIN = 4
-    private val STRAFE_DURATION_MAX = 14
-    private val STRAFE_DISTANCE_SQ_MIN = 0 // Min distance squared to start strafing
-    private val STRAFE_DISTANCE_SQ_MAX = 4 * 4 // Max distance squared to stop strafing
-    private val STRAFE_WALK_BACK_DISTANCE_SQ = 3 * 3
+    private val strafeDurationMin = 4
+    private val strafeDurationMax = 14
+    private val strafeDistanceSqMin = 0 // Min distance squared to start strafing
+    private val strafeDistanceSqMax = 4 * 4 // Max distance squared to stop strafing
+    private val strafeWalkBackDistanceSq = 3 * 3
 
     // Add this method to handle strafing movement
     private fun updateStrafing() {
@@ -154,15 +152,15 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         val distanceSquared = this.squaredDistanceTo(target)
 
         // Check if we're in the strafing distance range
-        val inStrafingRange = distanceSquared >= STRAFE_DISTANCE_SQ_MIN && distanceSquared <= STRAFE_DISTANCE_SQ_MAX
+        val inStrafingRange = isInStrafeWindow(distanceSquared)
         val targetBboxSideLenSq = target.boundingBox.averageSideLength * target.boundingBox.averageSideLength;
-        val tooClose = distanceSquared < STRAFE_WALK_BACK_DISTANCE_SQ + targetBboxSideLenSq;
+        val tooClose = distanceSquared < strafeWalkBackDistanceSq + targetBboxSideLenSq;
 
         // Start or continue strafing
         if (inStrafingRange || tooClose) {
             // If not currently strafing, start a new strafe
             if (strafingTime <= 0) {
-                strafingTime = random.nextBetween(STRAFE_DURATION_MIN, STRAFE_DURATION_MAX) // random time
+                strafingTime = random.nextBetween(strafeDurationMin, strafeDurationMax) // random time
                 strafingClockwise = random.nextBoolean() /// random direction
 
                 strafeSpeed = 0.5 + random.nextFloat() * 0.3
@@ -348,13 +346,24 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
                         // 2. Random chance for medium distance
                         val shouldJump = speed > 0.1 && (
                                 distanceSquared > ATTACK_REACH * ATTACK_REACH * 4 ||
-                                        random.nextFloat() < JUMP_CHANCE
+                                        random.nextFloat() < jumpChance
                                 )
 
+                        // stop strafing for the tick we initiate
+                        // jump so pathfinder doesn't cancel the boost
                         if (shouldJump) {
-                            // Vanilla jump
-                            this.jump()
-                            jumpCooldown = JUMP_COOLDOWN_MAX
+                            val (dirX, dirZ) = computeXZDirectionTo(target)
+
+                            nextJumpBoost = if (isInStrafeWindow(distanceSquared)) 0.05f else 0.20f
+                            navigation.stop()
+                            setSidewaysSpeed(0.0f)
+                            setForwardSpeed(0.0f)        // cancel old forward input
+
+                            /* replace horizontal velocity so no sideways remnants remain */
+                            velocity = Vec3d(dirX * nextJumpBoost, velocity.y, dirZ * nextJumpBoost)
+
+                            jump()
+                            jumpCooldown = jumpCooldownMax
                         }
                     }
                 } else {
@@ -537,5 +546,36 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
             val idx = (uuid.leastSignificantBits % 100).toInt().absoluteValue
             dataTracker.set(SKIN_INDEX, idx)   // ← this single call syncs & persists
         }
+    }
+
+    /**
+     * Overridden to match actual player movement.
+     */
+    override fun jump() {
+        super.jump()                    // ← vanilla vertical motion
+
+        if (nextJumpBoost != 0.0f) {    // horizontal push (player‑style)
+            val yawRad = yaw * (Math.PI / 180.0).toFloat()
+            addVelocity(
+                (-MathHelper.sin(yawRad) * nextJumpBoost).toDouble(),
+                0.0,
+                ( MathHelper.cos(yawRad) * nextJumpBoost).toDouble()
+            )
+            velocityDirty = true
+        }
+
+        nextJumpBoost = 0.0f            // reset for safety
+    }
+
+    private fun isInStrafeWindow(distSq: Double): Boolean {
+        return distSq in strafeDistanceSqMin.toDouble()..strafeDistanceSqMax.toDouble()
+    }
+
+    private fun computeXZDirectionTo(target: LivingEntity): Pair<Double, Double> {
+        val dx = target.x - x
+        val dz = target.z - z
+        val length = Math.sqrt(dx*dx + dz*dz)
+        if (length == 0.0) return 0.0 to 0.0
+        return (dx/length) to (dz/length)
     }
 }
