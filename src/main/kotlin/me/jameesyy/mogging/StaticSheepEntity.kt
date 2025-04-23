@@ -75,6 +75,7 @@ class StaticSheepEntity(entityType: EntityType<out SheepEntity>, world: World) :
     override fun initGoals() {
         super.initGoals()
 
+
         goalSelector.add(1, MaintainDistanceGoal())
 
         goalSelector.add(2, LookAtEntityGoal(this, PlayerEntity::class.java, DETECTION_RANGE.toFloat()))

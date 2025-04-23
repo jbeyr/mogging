@@ -2,7 +2,7 @@ package me.jameesyy.mogging.client.renderer
 
 import me.jameesyy.mogging.HackermanEntity
 import me.jameesyy.mogging.Mogging
-import me.jameesyy.mogging.SkinManager
+import me.jameesyy.mogging.client.SkinManager
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.render.VertexConsumerProvider
 import net.minecraft.client.render.entity.EntityRendererFactory
@@ -110,8 +110,6 @@ class HackermanRenderer(context: EntityRendererFactory.Context) :
         // Fallback
         return SkinManager.getDefaultTexture()
     }
-
-
 
     override fun createRenderState(): PlayerEntityRenderState {
         return PlayerEntityRenderState()

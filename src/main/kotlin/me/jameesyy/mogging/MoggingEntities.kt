@@ -8,6 +8,7 @@ import net.minecraft.entity.*
 import net.minecraft.entity.attribute.DefaultAttributeContainer
 import net.minecraft.entity.attribute.EntityAttributes
 import net.minecraft.entity.mob.ZombieEntity
+import net.minecraft.entity.passive.CowEntity
 import net.minecraft.entity.passive.FishEntity
 import net.minecraft.entity.passive.SheepEntity
 import net.minecraft.registry.Registries
@@ -35,6 +36,11 @@ object MoggingEntities {
         Identifier.of(Mogging.MOD_ID, "static_sheep")
     )
 
+    private val BULLISH_COW_KEY = RegistryKey.of(
+        RegistryKeys.ENTITY_TYPE,
+        Identifier.of(Mogging.MOD_ID, "bullish_cow")
+    )
+
     // Register the entity types
     val HACKERMAN: EntityType<HackermanEntity> = Registry.register(
         Registries.ENTITY_TYPE,
@@ -60,10 +66,19 @@ object MoggingEntities {
         }.dimensions(EntityDimensions.fixed(0.9f, 1.3f)).build(STATIC_SHEEP_KEY)
     )
 
+    val BULLISH_COW: EntityType<BullishCowEntity> = Registry.register(
+        Registries.ENTITY_TYPE,
+        BULLISH_COW_KEY.value,
+        FabricEntityTypeBuilder.create(SpawnGroup.CREATURE) { entityType, world ->
+            BullishCowEntity(entityType as EntityType<BullishCowEntity>, world)
+        }.dimensions(EntityDimensions.fixed(0.9f, 1.3f)).build(BULLISH_COW_KEY)
+    )
+
     fun registerAll() {
         FabricDefaultAttributeRegistry.register(HACKERMAN, HackermanEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(PIRANHA, PiranhaEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(STATIC_SHEEP, StaticSheepEntity.createAttributes())
+        FabricDefaultAttributeRegistry.register(BULLISH_COW, BullishCowEntity.createAttributes())
 
         BiomeModifications.addSpawn(
             BiomeSelectors.foundInOverworld(),
@@ -80,7 +95,6 @@ object MoggingEntities {
             ZombieEntity::canSpawnInDark
         )
 
-        // Set up natural spawning for Piranha
         BiomeModifications.addSpawn(
             BiomeSelectors.tag(BiomeTags.IS_OCEAN),
             SpawnGroup.WATER_AMBIENT,
@@ -89,8 +103,6 @@ object MoggingEntities {
             3,
             6
         )
-
-        // Set spawn restrictions for Piranha
         SpawnRestriction.register(
             PIRANHA,
             SpawnLocationTypes.IN_WATER,
@@ -98,7 +110,6 @@ object MoggingEntities {
             FishEntity::canSpawn
         )
 
-        // Static Sheep spawning - less common, in plains and meadows
         BiomeModifications.addSpawn(
             BiomeSelectors.includeByKey(
                 net.minecraft.world.biome.BiomeKeys.PLAINS,
@@ -106,16 +117,43 @@ object MoggingEntities {
             ),
             SpawnGroup.CREATURE,
             STATIC_SHEEP,
-            10, // Lower weight than regular sheep
+            10, // lower weight than regular sheep
             1,
             2
         )
-
         SpawnRestriction.register(
             STATIC_SHEEP,
             SpawnLocationTypes.ON_GROUND,
             Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
             SheepEntity::canMobSpawn
+        )
+
+        BiomeModifications.addSpawn(
+            BiomeSelectors.includeByKey(
+                net.minecraft.world.biome.BiomeKeys.PLAINS,
+                net.minecraft.world.biome.BiomeKeys.MEADOW,
+                net.minecraft.world.biome.BiomeKeys.FOREST,
+                net.minecraft.world.biome.BiomeKeys.FLOWER_FOREST,
+                net.minecraft.world.biome.BiomeKeys.TAIGA,
+                net.minecraft.world.biome.BiomeKeys.SNOWY_TAIGA,
+                net.minecraft.world.biome.BiomeKeys.OLD_GROWTH_PINE_TAIGA,
+                net.minecraft.world.biome.BiomeKeys.OLD_GROWTH_SPRUCE_TAIGA,
+                net.minecraft.world.biome.BiomeKeys.SAVANNA,
+                net.minecraft.world.biome.BiomeKeys.SAVANNA_PLATEAU,
+                net.minecraft.world.biome.BiomeKeys.WINDSWEPT_SAVANNA,
+                net.minecraft.world.biome.BiomeKeys.SUNFLOWER_PLAINS
+            ),
+            SpawnGroup.CREATURE,
+            BULLISH_COW,
+            5, // lower weight than regular cows (typically 8-10)
+            3,
+            5
+        )
+        SpawnRestriction.register(
+            BULLISH_COW,
+            SpawnLocationTypes.ON_GROUND,
+            Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+            CowEntity::canMobSpawn
         )
     }
 }

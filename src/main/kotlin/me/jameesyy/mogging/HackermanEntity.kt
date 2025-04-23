@@ -1,14 +1,14 @@
 package me.jameesyy.mogging
 
-import net.minecraft.entity.Entity
-import net.minecraft.entity.EntityType
-import net.minecraft.entity.EquipmentSlot
-import net.minecraft.entity.LivingEntity
+import net.minecraft.entity.*
 import net.minecraft.entity.ai.goal.*
 import net.minecraft.entity.ai.pathing.PathNodeType
 import net.minecraft.entity.attribute.DefaultAttributeContainer
 import net.minecraft.entity.attribute.EntityAttributes
 import net.minecraft.entity.damage.DamageSource
+import net.minecraft.entity.data.DataTracker
+import net.minecraft.entity.data.TrackedData
+import net.minecraft.entity.data.TrackedDataHandlerRegistry
 import net.minecraft.entity.effect.StatusEffects
 import net.minecraft.entity.mob.HostileEntity
 import net.minecraft.entity.mob.MobEntity
@@ -24,6 +24,7 @@ import net.minecraft.util.Hand
 import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.random.Random
 import net.minecraft.world.LocalDifficulty
+import net.minecraft.world.ServerWorldAccess
 import net.minecraft.world.World
 import java.util.*
 import kotlin.math.abs
@@ -45,6 +46,11 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         private const val SWING_DURATION = 6
         private const val PATH_UPDATE_INTERVAL = 5
 
+        private val SKIN_INDEX: TrackedData<Int> = DataTracker.registerData(
+            HackermanEntity::class.java,
+            TrackedDataHandlerRegistry.INTEGER
+        )
+
         fun createAttributes(): DefaultAttributeContainer.Builder {
             return createHostileAttributes()
                 .add(EntityAttributes.MAX_HEALTH, 20.0)
@@ -56,17 +62,25 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         }
     }
 
+    override fun initDataTracker(builder: DataTracker.Builder?) {
+        super.initDataTracker(builder)
+        builder?.add(SKIN_INDEX, -1) // -1 := unset
+    }
+
+    override fun initialize(
+        world: ServerWorldAccess?,
+        difficulty: LocalDifficulty?,
+        spawnReason: SpawnReason?,
+        entityData: EntityData?
+    ): EntityData? {
+        assignSkinIndexIfNeeded()
+        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
+        return super.initialize(world, difficulty, spawnReason, entityData)
+    }
+
     init {
         this.setPathfindingPenalty(PathNodeType.LAVA, -1.0f)
         this.setPathfindingPenalty(PathNodeType.WATER, -1.0f)
-        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
-
-
-        if (skinIndex == -1) {
-            // Use entity UUID for consistent skin assignment
-            skinIndex = (uuid.leastSignificantBits % 100).toInt().absoluteValue
-            println("Entity ${this.id} initialized with skin index $skinIndex from UUID $uuid")
-        }
     }
 
     override fun initGoals() {
@@ -98,6 +112,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         return Hand.MAIN_HAND
     }
 
+// this seems to work, but sword doesnt render
 //    override fun getEquippedStack(slot: EquipmentSlot): ItemStack {
 //        if (slot == EquipmentSlot.MAINHAND) {
 //            return ItemStack(Items.IRON_SWORD)
@@ -286,10 +301,9 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         return false
     }
 
-    // Also modify the tick method to make attacking more opportunistic
-    override fun tick() {
+    override fun mobTick(world: ServerWorld?) {
         prevHandSwingProgress = handSwingProgress
-        super.tick()
+        super.mobTick(world)
 
         if (attackCooldown > 0) {
             attackCooldown--
@@ -376,11 +390,12 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
             isTryingCritical = false
             this.setSidewaysSpeed(0.0f)
         }
-
-        if (this.age % 200 == 0) {
-            debugSkinInfo()
-        }
     }
+
+    // Also modify the tick method to make attacking more opportunistic
+//    override fun tick() {
+//        super.tick()
+//    }
 
     // Modify the tryAttackWithCooldown method to use our enhanced tryAttack
     private fun tryAttackWithCooldown(target: LivingEntity): Boolean {
@@ -514,40 +529,13 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
         return SoundEvents.ENTITY_PLAYER_DEATH
     }
 
-    // Save/load for persistence
-    override fun writeCustomDataToNbt(nbt: NbtCompound) {
-        super.writeCustomDataToNbt(nbt)
-        // Always save the current skin index
-        nbt.putInt("SkinIndex", skinIndex)
-    }
-
-    // Load from NBT
-    override fun readCustomDataFromNbt(nbt: NbtCompound) {
-        super.readCustomDataFromNbt(nbt)
-
-        if (nbt.contains("SkinIndex")) {
-            skinIndex = nbt.getInt("SkinIndex").orElse(-1)
-            println("Entity ${this.id} loaded skin index $skinIndex from NBT")
-        }
-
-        // If for some reason we still don't have a valid skin index, initialize it
-        if (skinIndex == -1) {
-            skinIndex = (uuid.leastSignificantBits % 100).toInt().absoluteValue
-            println("Entity ${this.id} re-initialized skin index to $skinIndex after NBT load")
-        }
-    }
-
     // Getter for the renderer to use
-    fun getSkinIndex(): Int {
-        // Ensure we always have a valid skin index
-        if (skinIndex == -1) {
-            skinIndex = (uuid.leastSignificantBits % 100).toInt().absoluteValue
-            println("Entity ${this.id} late-initialized skin index to $skinIndex")
-        }
-        return skinIndex
-    }
+    fun getSkinIndex(): Int = dataTracker[SKIN_INDEX]
 
-    fun debugSkinInfo() {
-        println("Entity ${this.id} with UUID $uuid has skin index $skinIndex")
+    private fun assignSkinIndexIfNeeded() {
+        if (!world.isClient && dataTracker[SKIN_INDEX] == -1) {
+            val idx = (uuid.leastSignificantBits % 100).toInt().absoluteValue
+            dataTracker.set(SKIN_INDEX, idx)   // ← this single call syncs & persists
+        }
     }
 }

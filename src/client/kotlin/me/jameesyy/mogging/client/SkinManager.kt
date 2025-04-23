@@ -1,6 +1,7 @@
 // File: me.jameesyy.mogging.client.SkinManager.kt
-package me.jameesyy.mogging
+package me.jameesyy.mogging.client
 
+import me.jameesyy.mogging.Mogging
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.texture.NativeImage
 import net.minecraft.util.Identifier
