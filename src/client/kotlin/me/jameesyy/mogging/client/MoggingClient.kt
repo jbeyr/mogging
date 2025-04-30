@@ -1,10 +1,7 @@
 package me.jameesyy.mogging.client
 
 import me.jameesyy.mogging.MoggingEntities
-import me.jameesyy.mogging.client.renderer.BullishCowRenderer
-import me.jameesyy.mogging.client.renderer.HackermanRenderer
-import me.jameesyy.mogging.client.renderer.PiranhaRenderer
-import me.jameesyy.mogging.client.renderer.StaticSheepRenderer
+import me.jameesyy.mogging.client.renderer.*
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
@@ -18,5 +15,6 @@ class MoggingClient : ClientModInitializer {
         EntityRendererRegistry.register(MoggingEntities.PIRANHA) { ctx -> PiranhaRenderer(ctx) }
         EntityRendererRegistry.register(MoggingEntities.STATIC_SHEEP) { ctx -> StaticSheepRenderer(ctx) }
         EntityRendererRegistry.register(MoggingEntities.BULLISH_COW) { ctx -> BullishCowRenderer(ctx) }
+        EntityRendererRegistry.register(MoggingEntities.CAMO_CREEPER) { ctx -> CamoCreeperRenderer(ctx) }
     }
 }

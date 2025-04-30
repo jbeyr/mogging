@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.`object`.builder.v1.entity.FabricEntityTypeBuilde
 import net.minecraft.entity.*
 import net.minecraft.entity.attribute.DefaultAttributeContainer
 import net.minecraft.entity.attribute.EntityAttributes
+import net.minecraft.entity.mob.CreeperEntity
 import net.minecraft.entity.mob.ZombieEntity
 import net.minecraft.entity.passive.CowEntity
 import net.minecraft.entity.passive.FishEntity
@@ -39,6 +40,11 @@ object MoggingEntities {
     private val BULLISH_COW_KEY = RegistryKey.of(
         RegistryKeys.ENTITY_TYPE,
         Identifier.of(Mogging.MOD_ID, "bullish_cow")
+    )
+
+    private val CAMO_CREEPER_KEY = RegistryKey.of(
+        RegistryKeys.ENTITY_TYPE,
+        Identifier.of(Mogging.MOD_ID, "camo_creeper")
     )
 
     // Register the entity types
@@ -74,11 +80,21 @@ object MoggingEntities {
         }.dimensions(EntityDimensions.fixed(0.9f, 1.3f)).build(BULLISH_COW_KEY)
     )
 
+    val CAMO_CREEPER: EntityType<CamoCreeperEntity> = Registry.register(
+        Registries.ENTITY_TYPE,
+        CAMO_CREEPER_KEY.value,
+        FabricEntityTypeBuilder.create(SpawnGroup.MONSTER) { entityType, world ->
+            CamoCreeperEntity(entityType as EntityType<CamoCreeperEntity>, world)
+        }.trackRangeBlocks(6)
+        .dimensions(EntityDimensions.fixed(0.6f, 1.7f)).build(CAMO_CREEPER_KEY)
+    )
+
     fun registerAll() {
         FabricDefaultAttributeRegistry.register(HACKERMAN, HackermanEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(PIRANHA, PiranhaEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(STATIC_SHEEP, StaticSheepEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(BULLISH_COW, BullishCowEntity.createAttributes())
+        FabricDefaultAttributeRegistry.register(CAMO_CREEPER, CamoCreeperEntity.createAttributes())
 
         BiomeModifications.addSpawn(
             BiomeSelectors.foundInOverworld(),
@@ -154,6 +170,22 @@ object MoggingEntities {
             SpawnLocationTypes.ON_GROUND,
             Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
             CowEntity::canMobSpawn
+        )
+
+
+        BiomeModifications.addSpawn(
+            BiomeSelectors.foundInOverworld(),
+            SpawnGroup.MONSTER,
+            CAMO_CREEPER,
+            20,
+            1,
+            1
+        )
+        SpawnRestriction.register(
+            CAMO_CREEPER,
+            SpawnLocationTypes.ON_GROUND,
+            Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+            CreeperEntity::canSpawnInDark
         )
     }
 }
