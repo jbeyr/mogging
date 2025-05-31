@@ -1,4 +1,4 @@
-package me.jameesyy.mogging.client.renderer
+package me.jameesyy.mogging.client.render
 
 import net.minecraft.client.render.entity.CowEntityRenderer
 import net.minecraft.client.render.entity.EntityRendererFactory

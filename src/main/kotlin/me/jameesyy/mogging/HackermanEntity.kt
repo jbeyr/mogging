@@ -98,8 +98,6 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     // FIXME for some reason this entity doesnt show equipment..
     override fun initEquipment(random: Random?, localDifficulty: LocalDifficulty?) {
         super.initEquipment(random, localDifficulty)
-        this.equipStack(EquipmentSlot.MAINHAND, ItemStack(Items.IRON_SWORD))
-        this.setEquipmentDropChance(EquipmentSlot.MAINHAND, 0.0f) // Don't drop the weapon
     }
 
     // TODO consider if needed
@@ -111,14 +109,6 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
     override fun getActiveHand(): Hand {
         return Hand.MAIN_HAND
     }
-
-// this seems to work, but sword doesnt render
-//    override fun getEquippedStack(slot: EquipmentSlot): ItemStack {
-//        if (slot == EquipmentSlot.MAINHAND) {
-//            return ItemStack(Items.IRON_SWORD)
-//        }
-//        return super.getEquippedStack(slot)
-//    }
 
 
     // uses LivingEntity's vanilla implementation for smooth animation
@@ -534,7 +524,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
     private fun assignSkinIndexIfNeeded() {
         if (!world.isClient && dataTracker[SKIN_INDEX] == -1) {
-            val idx = (uuid.leastSignificantBits % 100).toInt().absoluteValue
+            val idx = (uuid.leastSignificantBits % 100).toInt().absoluteValue + 1 // skin index must be in [1, +infin)
             dataTracker.set(SKIN_INDEX, idx)   // ← this single call syncs & persists
         }
     }

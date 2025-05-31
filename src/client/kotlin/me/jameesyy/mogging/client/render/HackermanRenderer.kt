@@ -1,4 +1,4 @@
-package me.jameesyy.mogging.client.renderer
+package me.jameesyy.mogging.client.render
 
 import me.jameesyy.mogging.HackermanEntity
 import me.jameesyy.mogging.Mogging

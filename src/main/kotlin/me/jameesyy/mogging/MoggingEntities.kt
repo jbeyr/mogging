@@ -5,8 +5,6 @@ import net.fabricmc.fabric.api.biome.v1.BiomeSelectors
 import net.fabricmc.fabric.api.`object`.builder.v1.entity.FabricDefaultAttributeRegistry
 import net.fabricmc.fabric.api.`object`.builder.v1.entity.FabricEntityTypeBuilder
 import net.minecraft.entity.*
-import net.minecraft.entity.attribute.DefaultAttributeContainer
-import net.minecraft.entity.attribute.EntityAttributes
 import net.minecraft.entity.mob.CreeperEntity
 import net.minecraft.entity.mob.ZombieEntity
 import net.minecraft.entity.passive.CowEntity
@@ -20,32 +18,19 @@ import net.minecraft.registry.tag.BiomeTags
 import net.minecraft.util.Identifier
 import net.minecraft.world.Heightmap
 
+fun entityTypeRegistryKey(identifierName: String): RegistryKey<EntityType<*>> {
+    return RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of(Mogging.MOD_ID, identifierName))
+}
+
 object MoggingEntities {
     // Create registry keys for our entities
-    private val HACKERMAN_KEY = RegistryKey.of(
-        RegistryKeys.ENTITY_TYPE,
-        Identifier.of(Mogging.MOD_ID, "hackerman")
-    )
+    private val HACKERMAN_KEY = entityTypeRegistryKey("hackerman")
+    private val PIRANHA_KEY = entityTypeRegistryKey("piranha")
+    private val STATIC_SHEEP_KEY = entityTypeRegistryKey("static_sheep")
+    private val BULLISH_COW_KEY = entityTypeRegistryKey("bullish_cow")
+    private val CAMO_CREEPER_KEY = entityTypeRegistryKey("camo_creeper")
+    private val PALADIN_KEY = entityTypeRegistryKey("paladin")
 
-    private val PIRANHA_KEY = RegistryKey.of(
-        RegistryKeys.ENTITY_TYPE,
-        Identifier.of(Mogging.MOD_ID, "piranha")
-    )
-
-    private val STATIC_SHEEP_KEY = RegistryKey.of(
-        RegistryKeys.ENTITY_TYPE,
-        Identifier.of(Mogging.MOD_ID, "static_sheep")
-    )
-
-    private val BULLISH_COW_KEY = RegistryKey.of(
-        RegistryKeys.ENTITY_TYPE,
-        Identifier.of(Mogging.MOD_ID, "bullish_cow")
-    )
-
-    private val CAMO_CREEPER_KEY = RegistryKey.of(
-        RegistryKeys.ENTITY_TYPE,
-        Identifier.of(Mogging.MOD_ID, "camo_creeper")
-    )
 
     // Register the entity types
     val HACKERMAN: EntityType<HackermanEntity> = Registry.register(
@@ -89,12 +74,25 @@ object MoggingEntities {
         .dimensions(EntityDimensions.fixed(0.6f, 1.7f)).build(CAMO_CREEPER_KEY)
     )
 
-    fun registerAll() {
+    val PALADIN: EntityType<PaladinEntity> = Registry.register(
+        Registries.ENTITY_TYPE,
+        PALADIN_KEY.value,
+        FabricEntityTypeBuilder.create(SpawnGroup.MONSTER) { type, world ->
+            PaladinEntity(type, world)
+        }.dimensions(EntityDimensions.fixed(0.6f, 1.99f)).build(PALADIN_KEY)
+    )
+
+    private fun registerDefaultAttributeRegistry() {
         FabricDefaultAttributeRegistry.register(HACKERMAN, HackermanEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(PIRANHA, PiranhaEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(STATIC_SHEEP, StaticSheepEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(BULLISH_COW, BullishCowEntity.createAttributes())
         FabricDefaultAttributeRegistry.register(CAMO_CREEPER, CamoCreeperEntity.createAttributes())
+        FabricDefaultAttributeRegistry.register(PALADIN, PaladinEntity.createAttributes())
+    }
+
+    fun registerAll() {
+        registerDefaultAttributeRegistry()
 
         BiomeModifications.addSpawn(
             BiomeSelectors.foundInOverworld(),
@@ -186,6 +184,20 @@ object MoggingEntities {
             SpawnLocationTypes.ON_GROUND,
             Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
             CreeperEntity::canSpawnInDark
+        )
+
+
+        SpawnRestriction.register(
+            PALADIN,
+            SpawnLocationTypes.ON_GROUND,
+            Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+            net.minecraft.entity.mob.SkeletonEntity::canSpawnInDark
+        )
+        BiomeModifications.addSpawn(
+            BiomeSelectors.foundInOverworld(),
+            SpawnGroup.MONSTER,
+            PALADIN,
+            25, 1, 2
         )
     }
 }
