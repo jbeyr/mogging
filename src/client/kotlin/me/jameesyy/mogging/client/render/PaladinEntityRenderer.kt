@@ -55,7 +55,7 @@ class PaladinEntityRenderer(
 
         // Update arm poses based on item usage
         state.rightArmPose = when {
-            entity.isUsingItem() && entity.getActiveHand() == Hand.MAIN_HAND -> {
+            entity.isUsingItem && entity.activeHand == Hand.MAIN_HAND -> {
                 // Crossbow charging pose
                 BipedEntityModel.ArmPose.CROSSBOW_CHARGE
             }
@@ -69,8 +69,13 @@ class PaladinEntityRenderer(
             else -> BipedEntityModel.ArmPose.EMPTY
         }
 
+        // Check if entity is using shield (blocking)
+        val isBlockingWithShield = entity.isUsingItem &&
+                entity.activeHand == Hand.OFF_HAND &&
+                offHandStack.item == Items.SHIELD
+
         state.leftArmPose = when {
-            entity.isBlocking() -> {
+            isBlockingWithShield || entity.isBlocking -> {
                 // Shield blocking pose
                 BipedEntityModel.ArmPose.BLOCK
             }
@@ -80,31 +85,14 @@ class PaladinEntityRenderer(
             }
             else -> BipedEntityModel.ArmPose.EMPTY
         }
+
+        // Also set the isUsingItem flag in the render state if blocking
+        if (entity.isBlocking) {
+            state.isUsingItem = true
+        }
     }
 
     override fun getTexture(state: BipedEntityRenderState): Identifier {
         return Identifier.of("textures/entity/skeleton/skeleton.png")
-        // For a custom texture:
-        // return Identifier("mogging", "textures/entity/paladin.png")
-    }
-
-    override fun getArmPose(entity: PaladinEntity, arm: Arm): BipedEntityModel.ArmPose {
-        val stack = entity.getStackInHand(if (arm == Arm.RIGHT) Hand.MAIN_HAND else Hand.OFF_HAND)
-
-        return when {
-            arm == Arm.RIGHT && entity.isUsingItem() && entity.getActiveHand() == Hand.MAIN_HAND -> {
-                BipedEntityModel.ArmPose.CROSSBOW_CHARGE
-            }
-            arm == Arm.RIGHT && CrossbowItem.isCharged(stack) -> {
-                BipedEntityModel.ArmPose.CROSSBOW_HOLD
-            }
-            arm == Arm.LEFT && entity.isBlocking() -> {
-                BipedEntityModel.ArmPose.BLOCK
-            }
-            !stack.isEmpty -> {
-                BipedEntityModel.ArmPose.ITEM
-            }
-            else -> BipedEntityModel.ArmPose.EMPTY
-        }
     }
 }

@@ -97,7 +97,7 @@ class HackermanEntity(entityType: EntityType<out HackermanEntity>, world: World)
 
     // FIXME for some reason this entity doesnt show equipment..
     override fun initEquipment(random: Random?, localDifficulty: LocalDifficulty?) {
-        super.initEquipment(random, localDifficulty)
+        // super.initEquipment(random, localDifficulty)
     }
 
     // TODO consider if needed
